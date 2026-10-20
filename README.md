@@ -1,3 +1,52 @@
+# CleanYourTV for the Portronics Beem 470
+
+[![Beem CI](https://github.com/kirankunapuli/cleanyourtv/actions/workflows/ci.yml/badge.svg?branch=beem-customizations)](https://github.com/kirankunapuli/cleanyourtv/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+This is Kiran Kunapuli’s Beem 470 fork of [CleanYourTV by Gathin23](https://github.com/Gathin23/cleanyourtv).
+I adapted the launcher and debloat list for the Portronics projector’s firmware, apps, and remote.
+The Beem source lives on **`beem-customizations`**, this fork’s default branch.
+
+## Beem-specific changes
+
+- **Firmware integration:** opens the HTC Settings activity when the standard Android Settings intent is unavailable.
+- **Home layout:** clock with seconds, date below the clock, Wi-Fi signal fan, and compact VPN badge.
+- **Appearance controls:** hold OK on Settings to choose the glow color or bundled wallpaper.
+- **Dock editing:** hold OK on an app to pin/unpin it or open App info.
+- **Apps and artwork:** Beem app defaults, support for apps without a TV launcher entry, and custom Netflix/SmartTube banners.
+- **Upstream updates:** retains the app library, reorder controls, optional system stats, and themes from CleanYourTV 2.4.
+
+The launcher makes no weather requests and contains no hardcoded user location. Custom artwork uses WebP;
+the release build stays below the existing **400 KiB** APK limit. Imgbot’s lossless optimizations are also included.
+
+## Target device and validation
+
+| Item | Device |
+|---|---|
+| Projector | Portronics Beem 470 Smart LED Projector |
+| Platform | Allwinner H713, 1 GB RAM |
+| Android | 11 / SDK 30 |
+| Firmware | `UI_Veng.projector.20250922.160824` |
+
+The debloat list was tested on this firmware. The integrated launcher passes Python checks, JVM tests,
+Android lint, a release build, and the APK-size check in CI. This latest combined revision still needs
+verification on the projector before installation.
+
+- [Build instructions and fork workflow](BEEM.md)
+- [Beem debloat list and firmware notes](examples/portronics-beem-470/debloat.txt)
+- [Merged upstream device-list PR #278](https://github.com/Gathin23/cleanyourtv/pull/278)
+- [NFX accessibility-helper follow-up #372](https://github.com/Gathin23/cleanyourtv/pull/372)
+
+`main` is the upstream baseline with lossless image optimizations. Launcher development stays on
+`beem-customizations`; small upstream contributions use separate PR branches. Private session logs,
+device dumps, credentials, and machine settings are excluded from this public fork.
+
+<details>
+<summary>Original CleanYourTV documentation, supported devices, and upstream credits</summary>
+
+The documentation below describes the upstream project. Its screenshots, press coverage, statistics,
+and project links belong to CleanYourTV; they do not represent additional claims about this Beem fork.
+
 <p align="center">
   <a href="https://cleanyour.tv"><img src="https://raw.githubusercontent.com/Gathin23/cleanyourtv/main/docs/banner.png" alt="CleanYourTV. Your TV, minus the ads." width="800"></a>
 </p>
@@ -410,3 +459,5 @@ Security issues: report them privately through the [Security tab](https://github
 
 MIT, see [`LICENSE`](LICENSE). The Outfit typeface is under the SIL Open Font License, see
 `launcher/FONT-LICENSE-OFL.txt`.
+
+</details>

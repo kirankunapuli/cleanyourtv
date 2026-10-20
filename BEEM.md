@@ -1,6 +1,6 @@
 # Beem launcher fork
 
-The `beem-customizations` branch holds the Portronics Beem 470 launcher changes on top
+The default branch, `beem-customizations`, holds the Portronics Beem 470 launcher changes on top
 of upstream CleanYourTV. `main` follows upstream; the device-specific work stays on
 this branch so it can be updated and backed up without sending a launcher restyle
 to the upstream project.
@@ -47,6 +47,9 @@ Commit launcher changes on `beem-customizations` and push with:
 git push origin beem-customizations
 ```
 
-The original pre-update working copy remains in the local stash named
-`beem-local-customizations-before-nfx-upstream-20261020`. It is a local recovery
-copy and is not published as branch history.
+Merged one-off contribution branches can be removed after their commits are reachable
+from upstream. Keep a branch while its pull request is open.
+
+Private session notes, transcripts, and original artwork are archived locally under
+ignored `backup/local-only/`. They are not part of the public source. Restored launcher
+work is committed on this branch, so ongoing development does not depend on a stash.
