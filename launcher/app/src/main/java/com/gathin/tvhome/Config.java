@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The launcher's settings: the values in res/values/config.xml, with an optional overlay read from
@@ -34,6 +35,11 @@ final class Config {
     static final String SETTINGS_NAME = "launcher_settings";
     private static final String THEME_REVISION_NAME = "theme_revision";
     private static final String THEME_SIGNATURE_KEY = "theme_signature";
+    /** In-app choices (Appearance menu, dock edits) win over config.xml and a pushed config.json. */
+    private static final String PREFS = "home";
+    private static final String PREF_AMBIENT = "ambient_color";
+    private static final String PREF_WALLPAPER = "wallpaper";
+    private static final String PREF_DOCK = "dock_apps";
 
     final List<String> dockApps;
     /** Grid apps fill the dock slots dock_apps leaves free (config.xml, fill_dock); on by default, false leaves the slots empty. */
@@ -44,6 +50,8 @@ final class Config {
     final String sourcePanelService;
     final String sourcePanelAction;
     final String inputAction;
+    /** Optional explicit component for the Settings pill when the firmware answers no ACTION_SETTINGS. */
+    final String settingsComponent;
     final int columns;
     final boolean animations;
     final boolean advancedEffects;
@@ -66,6 +74,8 @@ final class Config {
     final boolean showStats;
     /** App library pill after the last Home row (config.xml app_library). */
     final boolean appLibrary;
+    /** Fixed glow colour, or 0 to sample it from the focused app's artwork. */
+    final int ambientColor;
     /** Background colour behind everything, #RRGGBB; black unless a theme says otherwise. */
     final int backgroundColor;
     /** Time-of-day backdrop, 0 to 100 (config.xml, sky_intensity); 0 keeps the plain background. */
@@ -76,17 +86,19 @@ final class Config {
     final boolean settingsKeyPanel;
     /** Full-screen picture behind the launcher, or null for the plain colour. */
     final File wallpaper;
+    /** Use the launcher's bundled wallpaper when no theme file is present. */
+    final boolean wallpaperEnabled;
     /** Whether the overlay file was present and parsed. */
     final boolean overlayApplied;
     /** Festive skin from a theme (festival, festival_until, greeting, accent_color); {@link Festival#NONE} if none. */
     final Festival festival;
 
     private Config(List<String> dockApps, boolean fillDock, List<String> hiddenApps, String liveTvPackage,
-                   String liveTvAction, String sourcePanelService, String sourcePanelAction, String inputAction,
+                   String liveTvAction, String sourcePanelService, String sourcePanelAction, String inputAction, String settingsComponent,
                    int columns, int rowsBelowDock, boolean animations, boolean advancedEffects,
                    boolean shamsiDate, String greetingName, boolean moduleCards, boolean reducedMotion, boolean dockTitle, boolean dockRow, boolean reorderButton, String vpnApp,
-                   boolean showHomeSettingsShortcut, boolean showStats, boolean appLibrary, int backgroundColor, int skyIntensity,
-                   int[] settingsKeycodes, boolean settingsKeyPanel, File wallpaper, boolean overlayApplied,
+                   boolean showHomeSettingsShortcut, boolean showStats, boolean appLibrary, int ambientColor, int backgroundColor, int skyIntensity,
+                   int[] settingsKeycodes, boolean settingsKeyPanel, File wallpaper, boolean wallpaperEnabled, boolean overlayApplied,
                    Festival festival) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.fillDock = fillDock;
@@ -96,6 +108,7 @@ final class Config {
         this.sourcePanelService = sourcePanelService;
         this.sourcePanelAction = sourcePanelAction;
         this.inputAction = inputAction;
+        this.settingsComponent = settingsComponent;
         this.columns = columns;
         this.rowsBelowDock = rowsBelowDock;
         this.animations = animations;
@@ -111,11 +124,13 @@ final class Config {
         this.showHomeSettingsShortcut = showHomeSettingsShortcut;
         this.showStats = showStats;
         this.appLibrary = appLibrary;
+        this.ambientColor = ambientColor;
         this.backgroundColor = backgroundColor;
         this.skyIntensity = skyIntensity;
         this.settingsKeycodes = settingsKeycodes;
         this.settingsKeyPanel = settingsKeyPanel;
         this.wallpaper = wallpaper;
+        this.wallpaperEnabled = wallpaperEnabled;
         this.overlayApplied = overlayApplied;
         this.festival = festival;
     }
@@ -135,6 +150,7 @@ final class Config {
         String panelService = res.getString(R.string.source_panel_service).trim();
         String panelAction = res.getString(R.string.source_panel_action).trim();
         String inputAction = res.getString(R.string.input_action).trim();
+        String settingsComponent = res.getString(R.string.settings_component).trim();
         int columns = res.getInteger(R.integer.columns);
         int rowsBelow = res.getInteger(R.integer.rows_below_dock);
         boolean animations = res.getBoolean(R.bool.animations);
@@ -150,6 +166,8 @@ final class Config {
         boolean homeSettings = res.getBoolean(R.bool.show_home_settings_shortcut);
         boolean showStats = res.getBoolean(R.bool.show_stats);
         boolean library = res.getBoolean(R.bool.app_library);
+        boolean wallpaperEnabled = res.getBoolean(R.bool.wallpaper);
+        int ambient = 0;
         int background = 0xFF000000;
         int skyIntensity = res.getInteger(R.integer.sky_intensity);
         int[] settingsKeycodes = res.getIntArray(R.array.settings_key_keycodes);
@@ -169,6 +187,7 @@ final class Config {
             panelService = string(json, "source_panel_service", panelService);
             panelAction = string(json, "source_panel_action", panelAction);
             inputAction = string(json, "input_action", inputAction);
+            settingsComponent = string(json, "settings_component", settingsComponent);
             columns = integer(json, "columns", columns, 1, 8);
             rowsBelow = integer(json, "rows_below_dock", rowsBelow, 0, 3);
             animations = bool(json, "animations", animations);
@@ -184,6 +203,7 @@ final class Config {
             homeSettings = bool(json, "show_home_settings_shortcut", homeSettings);
             showStats = bool(json, "show_stats", showStats);
             library = bool(json, "app_library", library);
+            wallpaperEnabled = bool(json, "wallpaper", wallpaperEnabled);
             background = color(json, "background_color", background);
             skyIntensity = integer(json, "sky_intensity", skyIntensity, 0, 100);
             settingsKeycodes = intArray(json, "settings_key_keycodes", settingsKeycodes);
@@ -197,18 +217,41 @@ final class Config {
         if (chosenColumns >= 4 && chosenColumns <= 7) columns = chosenColumns;
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
+
+        // In-app Appearance choices and dock edits override both files.
+        SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String ambientPref = prefs.getString(PREF_AMBIENT, null);
+        if (ambientPref != null) {
+            if (!"auto".equalsIgnoreCase(ambientPref)) {
+                try {
+                    ambient = Color.parseColor(ambientPref) | 0xFF000000;
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        if (prefs.contains(PREF_WALLPAPER)) {
+            wallpaperEnabled = prefs.getBoolean(PREF_WALLPAPER, wallpaperEnabled);
+        }
+        String dockPref = prefs.getString(PREF_DOCK, null);
+        if (dockPref != null) {
+            List<String> fromPrefs = new ArrayList<>();
+            for (String pkg : dockPref.split("\n")) {
+                if (!pkg.trim().isEmpty()) fromPrefs.add(pkg.trim());
+            }
+            dock = fromPrefs;
+        }
         File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
         if (wallpaper != null && !(wallpaper.isFile() && wallpaper.length() > 0)) wallpaper = null;
         // A theme can also switch the wallpaper off while the file is still there.
-        if (json != null && json.has("wallpaper") && !bool(json, "wallpaper", true)) wallpaper = null;
+        if (!wallpaperEnabled) wallpaper = null;
         // A festive skin comes only from a theme; config.xml has no festival.
         Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
 
-        return new Config(dock, fillDock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
+        return new Config(dock, fillDock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction, settingsComponent,
                 Math.max(1, columns), Math.max(0, rowsBelow), animations, advancedEffects,
-                shamsi, greetingName, moduleCards, reducedMotion, dockTitle, dockRow, reorderButton, vpn, homeSettings, showStats, library, background,
-                Math.max(0, Math.min(100, skyIntensity)), settingsKeycodes, settingsKeyPanel, wallpaper, applied,
+                shamsi, greetingName, moduleCards, reducedMotion, dockTitle, dockRow, reorderButton, vpn, homeSettings, showStats, library, ambient, background,
+                Math.max(0, Math.min(100, skyIntensity)), settingsKeycodes, settingsKeyPanel, wallpaper, wallpaperEnabled, applied,
                 festival);
     }
 
@@ -243,6 +286,23 @@ final class Config {
         } catch (Exception ignored) {
             return "absent";
         }
+    }
+
+    static void saveAmbient(Context ctx, int color) {
+        SharedPreferences.Editor e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+        if (color == 0) e.putString(PREF_AMBIENT, "auto");
+        else e.putString(PREF_AMBIENT, String.format(Locale.US, "#%06X", color & 0xFFFFFF));
+        e.apply();
+    }
+
+    static void saveWallpaper(Context ctx, boolean enabled) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(PREF_WALLPAPER, enabled).apply();
+    }
+
+    static void saveDock(Context ctx, List<String> dock) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(PREF_DOCK, String.join("\n", dock)).apply();
     }
 
     /** Reads and parses the overlay; any problem means "no overlay", never a crash on the home screen. */

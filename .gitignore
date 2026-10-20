@@ -14,3 +14,9 @@ backup/
 *.aab
 launcher/hs_err_pid*.log
 launcher/replay_pid*.log
+
+# Local assistant state and session transcripts are not source backups.
+.serena/
+.tokensave/
+chat/
+CONTINUE.md

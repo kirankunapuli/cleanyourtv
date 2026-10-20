@@ -85,4 +85,21 @@
         <item quantity="other">%1$d אפליקציות</item>
     </plurals>
     <string name="greeting_with_name">%1$s, %2$s</string>
+
+    <string name="appearance">מראה</string>
+    <string name="glow_color">צבע ההילה</string>
+    <string name="background">רקע</string>
+    <string name="auto_app_colors">אוטומטי (תמונת היישום)</string>
+    <string name="color_aqua">תכלת</string>
+    <string name="color_violet">סגול</string>
+    <string name="color_amber">ענבר</string>
+    <string name="color_rose">ורוד</string>
+    <string name="color_mint">ירוק מנטה</string>
+    <string name="background_ambient">שחור עם הילה</string>
+    <string name="background_aurora">רקע זוהר הקוטב</string>
+    <string name="current">נוכחי</string>
+    <string name="pin_to_dock">הצמדה לשורת המועדפים</string>
+    <string name="remove_from_dock">הסרה משורת המועדפים</string>
+    <string name="app_info">פרטי היישום</string>
+    <string name="dock_full">שורת המועדפים מלאה — יש להסיר יישום תחילה</string>
 </resources>

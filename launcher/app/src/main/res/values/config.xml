@@ -9,9 +9,9 @@
 
     <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
     <string-array name="dock_apps">
-        <item>com.netflix.ninja</item>
-        <item>com.amazon.amazonvideo.livingroom</item>
-        <item>com.google.android.youtube.tv</item>
+        <item>com.jio.media.jiotvplus</item>
+        <item>org.smarttube.stable</item>
+        <item>com.netflix.mediaclient</item>
         <item>in.startv.hotstar</item>
     </string-array>
     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
@@ -23,10 +23,16 @@
     <string-array name="hidden_apps">
         <item>com.mediatek.wwtv.tvcenter</item>
         <item>com.mitv.gallery</item>
+        <item>com.htc.htcsettings</item>
+        <item>com.android.calculator2</item>
+        <item>com.softwinner.miracastReceiver</item>
+        <item>com.android.tv.settings</item>
+        <item>ca.dstudio.atvlauncher.free</item>
+        <item>me.efesser.flauncher</item>
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
-    <string name="live_tv_package" translatable="false">com.mediatek.wwtv.tvcenter</string>
+    <string name="live_tv_package" translatable="false"></string>
 
     <!-- Some TVs give their Live TV app no leanback entry point at all, so `live_tv_package` above
          resolves to nothing (TCL Android TV 9 on China-market sets is one). This action is then sent
@@ -43,6 +49,10 @@
          Live TV app handles. Where nothing answers that, this action is sent with the same URI instead
          (XGIMI projectors: com.xgimi.action.hdmiPlayer). Leave empty to omit. -->
     <string name="input_action" translatable="false"></string>
+
+    <!-- Settings pill: component first, then action. Used only when ACTION_SETTINGS resolves to nothing,
+         as on some projector firmwares. This Beem/HTC firmware opens its own settings here. -->
+    <string name="settings_component" translatable="false">com.htc.htcsettings/com.htc.activity.HomeActivity</string>
 
     <!-- Remote buttons that open Settings, by Linux scancode (HOME_KEY_SERVICE=1 build-and-install.sh). Remotes
          that send KEYCODE_SETTINGS need no entry. Some send a code Android does not map: the Xiaomi/Fengmi
@@ -110,7 +120,7 @@
          true keeps the GPU drawing path but calms the movement: a stiff highlight spring with no bounce,
          tiles that zoom without overshoot, shorter fades and no tile entrance when Home comes back. Set it
          here or with "reduced_motion": true in a theme's config.json; false keeps the normal motion. -->
-    <bool name="reduced_motion">false</bool>
+    <bool name="reduced_motion">true</bool>
 
     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
@@ -121,4 +131,8 @@
          sets its opacity. Around 60 reads clearly without hiding a wallpaper. Can also be set with
          "sky_intensity": 60 in a theme's config.json. -->
     <integer name="sky_intensity">0</integer>
+
+    <!-- Bundled full-screen background (res/drawable-nodpi/wallpaper.jpg) when the theme folder has no
+         wallpaper.jpg. Off here: the ambient glow behind the focused dock app is the background. -->
+    <bool name="wallpaper">false</bool>
 </resources>

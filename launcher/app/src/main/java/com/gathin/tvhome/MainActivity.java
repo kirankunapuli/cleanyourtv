@@ -17,10 +17,12 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
@@ -93,6 +95,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String liveTvPkg;
     private String liveTvAction;
     private String inputAction;
+    /** Explicit Settings component for firmwares that answer no ACTION_SETTINGS (config.xml). */
+    private String settingsComponent;
+    /** Fixed glow colour from the Appearance menu; 0 samples the focused app's artwork. */
+    private int ambientTint;
+    private boolean wallpaperEnabled;
     private String sourcePanelService;
     private String sourcePanelAction;
 
@@ -156,6 +163,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The grid has been laid out and focused since the last resume; the card prompt waits for this. */
     private boolean tilesReady;
     private Dialog cardPrompt;
+    /** Long-press tile menu while it is open, so onPause can close it. */
+    private Dialog tileMenu;
     /** Set when a decision could not be saved: no more prompts until the next resume, instead of asking in a loop. */
     private boolean promptsPaused;
     /** Rebuild the tiles on resume: Home was fully hidden by an app, or Home was pressed. Not after a side panel such as Wi-Fi settings. */
@@ -254,12 +263,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         liveTvPkg = cfg.liveTvPackage;
         liveTvAction = cfg.liveTvAction;
         inputAction = cfg.inputAction;
+        settingsComponent = cfg.settingsComponent;
+        ambientTint = cfg.ambientColor;
+        wallpaperEnabled = cfg.wallpaperEnabled;
         sourcePanelService = cfg.sourcePanelService;
         sourcePanelAction = cfg.sourcePanelAction;
 
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);
         if (cfg.wallpaper != null) showWallpaper(cfg.wallpaper);
+        else if (cfg.wallpaperEnabled) showWallpaper(R.drawable.wallpaper);
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
@@ -527,14 +540,36 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;   // no alpha needed, half the memory
             android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(file.getPath(), opts);
-            if (bmp == null) return;
-            android.widget.ImageView wall = new android.widget.ImageView(this);
-            wall.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-            wall.setImageBitmap(bmp);
-            root.addView(wall, 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            addWallpaper(bmp);
         } catch (Exception | OutOfMemoryError e) {
             // A bad or huge picture must never take the home screen down; the plain colour stays.
         }
+    }
+
+    /** The launcher's bundled wallpaper, used when no theme file was pushed. */
+    private void showWallpaper(int resId) {
+        try {
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeResource(getResources(), resId, opts);
+            int sample = 1;
+            while (opts.outWidth / (sample * 2) >= dm.widthPixels && opts.outHeight / (sample * 2) >= dm.heightPixels) sample *= 2;
+            opts.inJustDecodeBounds = false;
+            opts.inSampleSize = sample;
+            opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+            addWallpaper(android.graphics.BitmapFactory.decodeResource(getResources(), resId, opts));
+        } catch (Exception | OutOfMemoryError e) {
+            // Same rule: a bad picture leaves the plain background.
+        }
+    }
+
+    private void addWallpaper(Bitmap bmp) {
+        if (bmp == null) return;
+        ImageView wall = new ImageView(this);
+        wall.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wall.setImageBitmap(bmp);
+        root.addView(wall, 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     /**
@@ -684,6 +719,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
         if (cardPrompt != null) cardPrompt.dismiss();
         if (appLibrary != null) appLibrary.close();
+        if (tileMenu != null) tileMenu.dismiss();
         if (openPopup != null) openPopup.dismiss();
     }
 
@@ -981,7 +1017,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int decoratedTop = item.getTop() - (int) (6 * density);
             int dy = decoratedTop - grid.getPaddingTop();
             // A 1px mismatch used to start a scroll on every dock move. Only scroll when the row is
-            // actually off; reduced motion does it in one jump so it does not fight the highlight.
+            // actually off; reduced motion uses one jump so it does not fight the highlight.
             boolean scroll = Math.abs(dy) > (int) (8 * density);
             if (scroll) {
                 if (!animations || reducedMotion) grid.scrollBy(0, dy);
@@ -998,11 +1034,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    @Override
+    public void onTileLongPressed(int position, View card) {
+        showTileMenu(position);
+    }
+
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
-        int color = adapter.ambientColorAt(position);
+        int color = ambientTint != 0 ? ambientTint : adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - heroName.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
 
@@ -1117,7 +1158,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * show (every tile has its name underneath).
      */
     private void showGlowOnly(int position) {
-        int color = adapter.ambientColorAt(position);
+        int color = ambientTint != 0 ? ambientTint : adapter.ambientColorAt(position);
         stopAmbientAnimation();
         heroName.animate().cancel();
         ambient.animate().cancel();
@@ -1503,7 +1544,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
     private void updateWifiLabel() {
         String text = getString(R.string.wifi);
-        boolean vpn = false, online = false;
+        boolean vpn = false, online = false, wifiLabel = false;
+        int wifiRssi = Integer.MIN_VALUE;
         int icon = R.drawable.ic_wifi;
         // The diya's flame: 0 is out (offline), 1 to 4 follow the Wi-Fi signal, Ethernet burns steady at 4.
         int flame = 0;
@@ -1522,7 +1564,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
                 online = true;
                 if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) ethernet = true;
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) wifi = true;
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    wifi = true;
+                    // Signal strength is safe to read even with location off.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                            && caps.getSignalStrength() != Integer.MIN_VALUE) {
+                        wifiRssi = caps.getSignalStrength();
+                    }
+                }
             }
             if (!online) {
                 text = getString(R.string.offline);
@@ -1533,23 +1582,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 flame = 4;
                 steady = true;
             } else if (wifi) {
+                wifiLabel = true;
                 WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
                 WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
+                // Android redacts the SSID unless location is on and the app holds fine location.
+                // The setup keeps location in sensors-only mode, so no network location is used.
                 String ssid = info != null ? info.getSSID() : null;
                 flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
                 if (ssid != null) {
                     ssid = ssid.replace("\"", "").trim();
                     if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
                 }
+                if (info != null && info.getRssi() > -127) wifiRssi = info.getRssi();
             }
         } catch (Exception ignored) {
         }
+        // A Wi-Fi fan, not four bars, replaces the Wi-Fi glyph as the start icon, so the pill still
+        // reads as Wi-Fi while the lit arcs carry the signal level.
+        Drawable start = wifiLabel && wifiRssi > -127 ? signalWifi(wifiRssi) : getDrawable(icon);
+        btnWifi.setCompoundDrawablesRelativeWithIntrinsicBounds(start, null, null, null);
         // With a VPN app configured, a VPN that is down matters too: show a red "VPN off" capsule then.
         boolean vpnDown = !vpn && online && !vpnApp.isEmpty();
         if (vpn || vpnDown) {
             // Network name, then the green lock-and-VPN (or red "VPN off") capsule drawn in place of the word.
             String badge = getString(vpn ? R.string.vpn : R.string.vpn_off);
-            VpnBadge span = new VpnBadge(vpn ? getDrawable(R.drawable.ic_lock) : null, density);
+            VpnBadge span = new VpnBadge(vpn, density);
             // The pill has a maximum width and ellipsizes at the end, which would cut the badge off after
             // a long network name, so shorten the name to whatever room the badge leaves. The total paddings
             // include the Wi-Fi icon.
@@ -1567,8 +1624,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (online && flame == 0) flame = 3;   // online some other way (cellular, USB tethering)
             diya.setSteady(steady);
             diya.setFlame(flame);
-        } else {
-            btnWifi.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
         }
     }
 
@@ -1623,6 +1678,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
+    /** The standard Wi-Fi fan with its dot and three arcs; more lit arcs mean a stronger RSSI. */
+    private Drawable signalWifi(int rssi) {
+        int arcs = rssi >= -55 ? 3 : rssi >= -67 ? 2 : rssi >= -78 ? 1 : 0;
+        int dpi = getResources().getDisplayMetrics().densityDpi;
+        int w = Math.round(24 * density), h = Math.round(18 * density);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        bmp.setDensity(dpi);
+        Canvas c = new Canvas(bmp);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cx = w / 2f, cy = h - 1.5f * density;
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(cx, cy, 1.3f * density, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(2f * density);
+        float[] radii = {4.5f * density, 7.5f * density, 10.5f * density};
+        for (int i = 0; i < radii.length; i++) {
+            p.setColor(i < arcs ? 0xFFFFFFFF : 0x2EFFFFFF);
+            float r = radii[i];
+            c.drawArc(new RectF(cx - r, cy - r, cx + r, cy + r), 225, 90, false, p);
+        }
+        return new BitmapDrawable(getResources(), bmp);
+    }
+
     /** The network pill opens the VPN app when one is configured and installed, otherwise Wi-Fi settings. */
     private void openNetworkPill() {
         Intent i = vpnApp.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(vpnApp);
@@ -1632,12 +1711,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
 
     /**
-     * China-market MIUI TV firmware answers no standard Settings intents at all; open Xiaomi's own
-     * settings app (com.xiaomi.mitv.settings) there, so the Settings and Wi-Fi pills keep working.
+     * Some projector firmwares answer no standard Settings intents at all. The Settings pill can name
+     * their settings activity in config.xml; China-market MIUI TV firmware is then handled by package.
      * On firmware with a standard settings handler the behaviour is unchanged.
      */
     private Intent systemIntent(String standardAction) {
+        if (Settings.ACTION_SETTINGS.equals(standardAction) && !settingsComponent.isEmpty()) {
+            ComponentName c = ComponentName.unflattenFromString(settingsComponent);
+            if (c != null) {
+                // CLEAR_TOP: firmware settings keep their last sub-screen on top; reopen the root.
+                Intent configured = new Intent().setComponent(c).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                if (configured.resolveActivity(getPackageManager()) != null) return configured;
+            }
+        }
         Intent i = new Intent(standardAction);
+        if (i.resolveActivity(getPackageManager()) != null) return i;
+        i = new Intent().setComponent(new ComponentName(
+                "com.android.tv.settings", "com.android.tv.settings.MainSettings"));
         if (i.resolveActivity(getPackageManager()) != null) return i;
         i = new Intent().setComponent(new ComponentName(
                 "com.xiaomi.mitv.settings", "com.xiaomi.mitv.settings.entry.MainActivity"));
@@ -1868,6 +1958,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         PopupWindow popup = glassPopup(panel, (int) (200 * density));
         addSettingsMenuRow(rows, popup, R.string.launcher_settings, () -> startActivityForResult(
                 new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
+        addSettingsMenuRow(rows, popup, R.string.appearance, this::showAppearance);
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
         addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -1989,6 +2080,205 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             promptsPaused = true;
         }
         reloadTiles();
+    }
+
+    // ---- customization ---------------------------------------------------------------------------
+
+    /** Glow colour and background choices; each writes a preference and restarts Home to apply it. */
+    private void showAppearance() {
+        View panel = getLayoutInflater().inflate(R.layout.popup_cards, root, false);
+        ((TextView) panel.findViewById(R.id.title)).setText(R.string.appearance);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        addSection(rows, getString(R.string.glow_color));
+        addColorRow(rows, getString(R.string.auto_app_colors), 0, ambientTint == 0,
+                () -> applyAmbient(0));
+        final int[] colors = {0xFF38BDF8, 0xFFA855F7, 0xFFF59E0B, 0xFFFB7185, 0xFF34D399};
+        final int[] names = {R.string.color_aqua, R.string.color_violet, R.string.color_amber,
+                R.string.color_rose, R.string.color_mint};
+        for (int i = 0; i < colors.length; i++) {
+            final int color = colors[i];
+            addColorRow(rows, getString(names[i]), color, ambientTint == color,
+                    () -> applyAmbient(color));
+        }
+
+        addSection(rows, getString(R.string.background));
+        addMenuRow(rows, currentLabel(getString(R.string.background_ambient), !wallpaperEnabled),
+                null, () -> applyWallpaper(false));
+        addMenuRow(rows, currentLabel(getString(R.string.background_aurora), wallpaperEnabled),
+                null, () -> applyWallpaper(true));
+        showSettingsPopup(panel, 380);
+    }
+
+    private void applyAmbient(int color) {
+        dismissPopup();
+        Config.saveAmbient(this, color);
+        recreate();
+    }
+
+    private void applyWallpaper(boolean enabled) {
+        dismissPopup();
+        Config.saveWallpaper(this, enabled);
+        recreate();
+    }
+
+    private String currentLabel(String label, boolean current) {
+        return current ? label + "  ·  " + getString(R.string.current) : label;
+    }
+
+    private void dismissPopup() {
+        if (openPopup != null) {
+            openPopup.dismiss();
+            openPopup = null;
+        }
+    }
+
+    /** One menu row: reuse the Inputs row so focus, text and glass match the rest of the launcher. */
+    private void addMenuRow(LinearLayout rows, String title, Drawable icon, Runnable action) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        ImageView iconView = row.findViewById(R.id.icon);
+        if (icon != null) {
+            iconView.setImageDrawable(icon);
+        } else {
+            iconView.setVisibility(View.GONE);
+        }
+        ((TextView) row.findViewById(R.id.title)).setText(title);
+        row.findViewById(R.id.dot).setVisibility(View.GONE);
+        row.findViewById(R.id.status).setVisibility(View.GONE);
+        row.setOnClickListener(v -> action.run());
+        rows.addView(row);
+    }
+
+    /** A menu row with a colour swatch and a Current marker. */
+    private void addColorRow(LinearLayout rows, String title, int color, boolean current, Runnable action) {
+        View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
+        GradientDrawable swatch = new GradientDrawable();
+        swatch.setShape(GradientDrawable.OVAL);
+        swatch.setSize((int) (16 * density), (int) (16 * density));
+        if (color == 0) {
+            swatch.setGradientType(GradientDrawable.SWEEP_GRADIENT);
+            swatch.setColors(new int[]{0xFFFF5A5F, 0xFFFFC857, 0xFF4ADE80, 0xFF38BDF8, 0xFFA855F7});
+        } else {
+            swatch.setColor(color);
+        }
+        ImageView iconView = row.findViewById(R.id.icon);
+        iconView.setImageDrawable(swatch);
+        iconView.setImageTintList(null);
+        // Keep "Current" in the title: the title's colour selector already flips with row focus,
+        // while the dim status label washes out on the white focused row.
+        ((TextView) row.findViewById(R.id.title)).setText(current ? currentLabel(title, true) : title);
+        row.findViewById(R.id.dot).setVisibility(View.GONE);
+        row.findViewById(R.id.status).setVisibility(View.GONE);
+        row.setOnClickListener(v -> action.run());
+        rows.addView(row);
+    }
+
+    private void addSection(LinearLayout rows, String title) {
+        TextView header = new TextView(this);
+        header.setText(title.toUpperCase(Locale.ROOT));
+        header.setTextColor(0x8CFFFFFF);
+        header.setTextSize(11f);
+        header.setLetterSpacing(0.18f);
+        header.setPadding((int) (12 * density), (int) (8 * density),
+                (int) (12 * density), (int) (4 * density));
+        rows.addView(header);
+    }
+
+    /** Drops a Settings-anchored panel under the pill, scrolls it if the screen is short, focuses the first row. */
+    private void showSettingsPopup(View panel, int widthDp) {
+        View anchor = findViewById(R.id.btnSettings);
+        PopupWindow popup = glassPopup(panel, (int) (widthDp * density));
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        int[] at = new int[2];
+        anchor.getLocationInWindow(at);
+        int room = root.getHeight() - (at[1] + anchor.getHeight()) - (int) (34 * density);
+        popup.setHeight(Math.min(panel.getMeasuredHeight(), Math.max(room, (int) (120 * density))));
+        dropIn(popup, panel, anchor, Gravity.END);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        // Focus only after the popup window has taken focus; before that requestFocus is a no-op.
+        panel.postDelayed(() -> focusFirstRow(rows), 200);
+    }
+
+    /** Long OK on a tile: pin it to the dock, remove it, or open its system app info. */
+    private void showTileMenu(int position) {
+        final String pkg = adapter.pkgAt(position);
+        final String label = adapter.labelAt(position);
+        if (pkg.isEmpty()) return;
+        final boolean docked = dockApps.contains(pkg);
+
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        View panel = getLayoutInflater().inflate(R.layout.popup_cards, root, false);
+        ((TextView) panel.findViewById(R.id.title)).setText(label);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        if (!pkg.equals(getPackageName())) {
+            addMenuRow(rows, getString(docked ? R.string.remove_from_dock : R.string.pin_to_dock),
+                    null, () -> {
+                        dialog.dismiss();
+                        if (docked) unpinFromDock(pkg);
+                        else pinToDock(pkg);
+                    });
+        }
+        addMenuRow(rows, getString(R.string.app_info), null, () -> {
+            dialog.dismiss();
+            openAppInfo(pkg, label);
+        });
+
+        dialog.setContentView(panel);
+        dialog.setCanceledOnTouchOutside(true);
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout((int) (380 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setDimAmount(0.6f);
+        }
+        dialog.setOnDismissListener(d -> {
+            if (tileMenu == dialog) tileMenu = null;
+        });
+        tileMenu = dialog;
+        dialog.show();
+        // The Dialog's window only takes focus after show(); retry once it has.
+        panel.postDelayed(() -> focusFirstRow(rows), 200);
+    }
+
+    private void focusFirstRow(LinearLayout rows) {
+        for (int i = 0; i < rows.getChildCount(); i++) {
+            View row = rows.getChildAt(i);
+            if (row.isFocusable()) {
+                row.requestFocus();
+                return;
+            }
+        }
+    }
+
+    private void pinToDock(String pkg) {
+        if (dockApps.contains(pkg)) return;
+        if (dockApps.size() >= COLUMNS) {
+            Toast.makeText(this, R.string.dock_full, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<String> next = new ArrayList<>(dockApps);
+        next.add(pkg);
+        Config.saveDock(this, next);
+        recreate();
+    }
+
+    private void unpinFromDock(String pkg) {
+        List<String> next = new ArrayList<>(dockApps);
+        if (next.remove(pkg)) {
+            Config.saveDock(this, next);
+            recreate();
+        }
+    }
+
+    private void openAppInfo(String pkg, String label) {
+        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
+        try {
+            startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(this, getString(R.string.cant_open, label), Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** Dropdown under the Settings pill (hold OK): every discovered card, its package and key; OK toggles Shown and Hidden. */
